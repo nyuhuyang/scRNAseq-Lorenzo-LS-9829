@@ -70,6 +70,7 @@ cell_Freq_split$p_val_adj = p.adjust(p = cell_Freq_split$p_value, method = "bonf
 write.csv(cell_Freq_split,paste0(path,"cell_Freq_split.csv"))
 
 Rshiny_path <- "Rshiny/Lorenzo-LS-9829/"
-samples <- c("All_samples","LS2","LS3","LS4","LS5","LS6","LS7")
-PrepareShiny(object, samples, Rshiny_path, split.by = "orig.ident",
+samples <- c("All_samples","WT", "KO","LS2","LS3","LS4","LS5","LS6","LS7")
+
+PrepareShiny(object, samples, Rshiny_path, split.by = c("conditions","orig.ident"),
              reduction = "umap",assay = "SCT")
