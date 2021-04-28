@@ -19,20 +19,20 @@ path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path))dir.create(path, recursive = T)
 # Need 64GB
 # load files
-load(file = "data/Lorenzo-LS6_20210408_SCT.Rda")
+load(file = "data/Lorenzo-LS6_20210408.Rda")
 # Need 32GB
 #DefaultAssay(object) = "SCT"
 #Idents(object) = "Doublets"
 #object <- subset(object, idents = "Singlet")
 object@meta.data$label.fine %<>% gsub("Macrophages activated","Macrophages",.)
-Idents(object1) = "label.fine"
+Idents(object) = "label.fine"
 cell.types <- c("Fibroblasts activated", "Fibroblasts","NK cells",
                 "Endothelial cells","Monocytes","B cells","Granulocytes",
                 "T cells","Macrophages","Cardiomyocytes")
 cell.type = cell.types[args]
-object1 <- subset(object, idents = cell.type)
-Idents(object1) = "conditions"
-system.time(markers <- FindAllMarkers.UMI(object1, 
+object <- subset(object, idents = cell.type)
+Idents(object) = "conditions"
+system.time(markers <- FindAllMarkers(object, 
                                        logfc.threshold = 0.1, 
                                        return.thresh = 0.05, 
                                             only.pos = F,latent.vars = "nFeature_SCT",
