@@ -7,7 +7,7 @@ invisible(lapply(c("Seurat","dplyr","cowplot",
                    "magrittr","data.table","future","ggplot2","tidyr"), function(x) {
                            suppressPackageStartupMessages(library(x,character.only = T))
                    }))
-source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
+source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat4_differential_expression.R")
 # SLURM_ARRAY_TASK_ID
 slurm_arrayid <- Sys.getenv('SLURM_ARRAY_TASK_ID')
 if (length(slurm_arrayid)!=1)  stop("Exact one argument must be supplied!")
@@ -19,12 +19,16 @@ path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path))dir.create(path, recursive = T)
 # Need 64GB
 # load files
+load(file = "data/Lorenzo-LS6_20210408_SCT.Rda")
+meta.data = object@meta.data
+rm(object);GC()
 load(file = "data/Lorenzo-LS6_20210408.Rda")
+object@meta.data = meta.data
 # Need 32GB
 #DefaultAssay(object) = "SCT"
 #Idents(object) = "Doublets"
 #object <- subset(object, idents = "Singlet")
-object@meta.data$label.fine %<>% gsub("Macrophages activated","Macrophages",.)
+object$label.fine %<>% gsub("Macrophages activated","Macrophages",.)
 Idents(object) = "label.fine"
 cell.types <- c("Fibroblasts activated", "Fibroblasts","NK cells",
                 "Endothelial cells","Monocytes","B cells","Granulocytes",
@@ -32,12 +36,11 @@ cell.types <- c("Fibroblasts activated", "Fibroblasts","NK cells",
 cell.type = cell.types[args]
 object <- subset(object, idents = cell.type)
 Idents(object) = "conditions"
-system.time(markers <- FindAllMarkers(object, 
+system.time(markers <- FindAllMarkers_UMI(object, 
                                        logfc.threshold = 0.1, 
                                        return.thresh = 0.05, 
                                             only.pos = F,latent.vars = "nFeature_SCT",
                                                test.use = "MAST"))
-Lung_markers$gene = rownames(Lung_markers)
-Lung_markers$cluster = cell.type
+markers$cell.type = cell.type
 if(args < 10) args = paste0("0", args)
-write.csv(Lung_markers,paste0(path,"Lung_30-",args,"_FC0.1_",cell.type,".csv"))
+write.csv(markers,paste0(path,args,"_FC0.1_",cell.type,".csv"))
