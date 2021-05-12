@@ -20,10 +20,6 @@ if(!dir.exists(path))dir.create(path, recursive = T)
 # Need 64GB
 # load files
 load(file = "data/Lorenzo-LS6_20210408_SCT.Rda")
-meta.data = object@meta.data
-rm(object);GC()
-load(file = "data/Lorenzo-LS6_20210408.Rda")
-object@meta.data = meta.data
 # Need 32GB
 #DefaultAssay(object) = "SCT"
 #Idents(object) = "Doublets"
@@ -37,10 +33,10 @@ cell.type = cell.types[args]
 object <- subset(object, idents = cell.type)
 Idents(object) = "conditions"
 system.time(markers <- FindAllMarkers_UMI(object, 
-                                       logfc.threshold = 0.1, 
-                                       return.thresh = 0.05, 
+                                       logfc.threshold = 0.01, 
+                                       return.thresh = 1, 
                                             only.pos = F,latent.vars = "nFeature_SCT",
                                                test.use = "MAST"))
 markers$cell.type = cell.type
 if(args < 10) args = paste0("0", args)
-write.csv(markers,paste0(path,args,"_FC0.1_",cell.type,".csv"))
+write.csv(markers,paste0(path,args,"_FC0.01_",cell.type,".csv"))
