@@ -18,6 +18,25 @@ source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path)) dir.create(path, recursive = T)
 
+if(rownames(GSEA_expr)[1] == 
+   Hmisc::capitalize(tolower(rownames(GSEA_expr)[1]))){
+    print("#====Replace gene names ======")
+    rownames.GSEA_expr = rownames(GSEA_expr)
+    human = biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    mouse = biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+    
+    genesV2 = biomaRt::getLDS(attributes = c("mgi_symbol"), #filters = "mgi_symbol",
+                              values = rownames(GSEA_expr) , mart = mouse,
+                              attributesL = c("hgnc_symbol"), 
+                              martL = human, uniqueRows=T)
+    rm = duplicated(genesV2[,1])
+    genesV2 = genesV2[!rm,]
+    colnames(genesV2) = c("gene","NAME")
+    colnames(GSEA_expr)[1] = "gene"
+    GSEA_expr <- merge(genesV2,GSEA_expr,by = "gene")
+    GSEA_expr = GSEA_expr[,-1]
+}
+
 csv_list <- list.files(pattern = "FC0.01",path = "output/20210511",full.names = T)
 deg_list <- pbapply::pblapply(csv_list, function(x){
     tmp = read.csv(x,row.names = 1)
