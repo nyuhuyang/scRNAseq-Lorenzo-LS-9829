@@ -3,12 +3,12 @@
 #  0 setup environment, install libraries if necessary, load libraries
 #
 # ######################################################################
-# conda activate r4.0.3
+# conda activate r4.1.1
 #devtools::install_github("immunogenomics/harmony", ref= "ee0877a",force = T)
-invisible(lapply(c("Seurat","dplyr","ggplot2","cowplot","sctransform"), function(x) {
+invisible(lapply(c("Seurat","dplyr","ggplot2","cowplot","pbapply","sctransform","harmony","magrittr"), function(x) {
     suppressPackageStartupMessages(library(x,character.only = T))
 }))
-source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
+source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat4_functions.R")
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path)) dir.create(path, recursive = T)
 
@@ -20,104 +20,96 @@ if(!dir.exists(path)) dir.create(path, recursive = T)
 # ######################################################################
 #======1.1 Setup the Seurat objects =========================
 # read sample summary list
-df_samples <- readxl::read_excel("doc/20210408_scRNAseq_info.xlsx")
+df_samples <- readxl::read_excel("output/20220411/20220411_En_6.xlsx")
 df_samples = as.data.frame(df_samples)
 colnames(df_samples) <- colnames(df_samples) %>% tolower
-rm = "LS1"
-df_samples = df_samples[!(df_samples$sample %in% rm),]
-
-print(df_samples)
-(samples = df_samples$sample)
 nrow(df_samples)
 
 #======1.2 load  Seurat =========================
-(load(file = "data/Lorenzo-LS6_20210408.Rda"))
-
+object  =readRDS(file = "data/Lorenzo-LS6_20210411.rds")
 meta.data = object@meta.data
-for(i in 1:length(samples)){
-    cells <- meta.data$orig.ident %in% samples[i]
-    meta.data[cells,"conditions"] = df_samples$conditions[i]
+table(df_samples$sample %in% meta.data$orig.ident)
+for(i in 1:length(df_samples$sample)){
+    cells <- meta.data$orig.ident %in% df_samples$sample[i]
+    print(df_samples$sample[i])
+    print(table(cells))
+    meta.data[cells,"condition"] = as.character(df_samples$condition[i])
+    meta.data[cells,"Mean.Reads.per.Cell"] = df_samples$mean.reads.per.cell[i]
+    meta.data[cells,"Number.of.Reads"] = df_samples$number.of.reads[i]
+    meta.data[cells,"Sequencing.Saturation"] = df_samples$sequencing.saturation[i]
 }
-meta.data$orig.ident %<>% factor(levels = samples)
-meta.data$conditions %<>% factor(levels = c("WT", "KO"))
-table(meta.data$conditions)
-
+meta.data$orig.ident %<>% factor(levels = df_samples$sample)
 table(rownames(object@meta.data) == rownames(meta.data))
 table(colnames(object) == rownames(meta.data))
-
 object@meta.data = meta.data
-#======1.6 Performing SCTransform and integration =========================
-set.seed(100)
-object_list <- SplitObject(object, split.by = "orig.ident")
-remove(object);GC()
+# Determine the ‘dimensionality’ of the dataset  =========
+npcs = 100
 
-object_list %<>% lapply(SCTransform,method = "glmGamPoi")
-object.features <- SelectIntegrationFeatures(object.list = object_list,
-                                             nfeatures = 2000)
-options(future.globals.maxSize= object.size(object_list)*1.5)
-npcs = 30
-anchors <- FindIntegrationAnchors(object.list = object_list, 
-                                         anchor.features = object.features)
-remove(object_list);GC()
-# this command creates an 'integrated' data assay
-object <- IntegrateData(anchorset = anchors,normalization.method = "SCT")
-remove(anchors);GC()
-save(object, file = "data/Lorenzo-LS6_20210408.Rda")
+DefaultAssay(object) <- "RNA"
+object %<>% NormalizeData()
 
-# Perform an integrated analysis
-# Now we can run a single integrated analysis on all cells!
-    
-# specify that we will perform downstream analysis on the corrected data note that the original
-# unmodified data still resides in the 'RNA' assay
-DefaultAssay(object) <- "integrated"
-
-# Run the standard workflow for visualization and clustering
+object <- FindVariableFeatures(object = object, selection.method = "vst",
+                               num.bin = 20, nfeatures = 3000,
+                               mean.cutoff = c(0.1, 8), dispersion.cutoff = c(1, Inf))
 object %<>% ScaleData(verbose = FALSE)
-object %<>% RunPCA(npcs = 30, verbose = FALSE)
-object %<>% RunUMAP(reduction = "pca", dims = 1:30)
-system.time(object %<>% RunTSNE(reduction = "pca", dims = 1:30))
-
-object %<>% FindNeighbors(reduction = "pca", dims = 1:30)
-object %<>% FindClusters(resolution = 0.5)
-
-#=======1.9 summary =======================================
-lapply(c(TSNEPlot.1, UMAPPlot.1), function(fun)
-    fun(object, group.by="orig.ident",pt.size = 0.1,label = F,
-        label.repel = T,alpha = 0.9,cols = c(Singler.colors,Singler.colors),
-        no.legend = T,label.size = 4, repel = T, title = "Seurat Integration",
-        do.print = T, do.return = F))
-
-g1 <- UMAPPlot.1(object, group.by="orig.ident",pt.size = 0.1,label = F,
-                 label.repel = T,alpha = 0.9,cols = c(Singler.colors,Singler.colors),
-                 no.legend = T,label.size = 4, repel = T, title = "with data Integration",
-                 do.print = F, do.return = T)
-
-object %<>% SCTransform(method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = TRUE)
-
-save(object, file = "data/Lorenzo-LS6_20210408.Rda")
-format(object.size(object@assays$RNA),unit = "GB")
-format(object.size(object@assays$integrated),unit = "GB")
-
-object[['RNA']] <- NULL
-object[['integrated']] <- NULL
-   
-format(object.size(object),unit = "GB")
-
-save(object, file = "data/Lorenzo-LS6_20210408_SCT.Rda")
-
-#= compare data integration==============
-rm(object);GC()
-load(file = "data/Lorenzo-LS6_20210408_SCT.Rda")
-
-# Run the standard workflow for visualization and clustering
-object %<>% RunPCA(npcs = 30, verbose = FALSE)
-object %<>% RunUMAP(reduction = "pca", dims = 1:30)
-
-g2 <- UMAPPlot.1(object, group.by="orig.ident",pt.size = 0.1,label = F,
-                 label.repel = T,alpha = 0.9,cols = c(Singler.colors,Singler.colors),
-                 no.legend = T,label.size = 4, repel = T, title = "without Integration",
-                 do.print = F, do.return = T)
-
-jpeg(paste0(path,"UMAP_data_integration.jpeg"), units="in", width=10, height=7,res=600)
-patchwork::wrap_plots(list(g2,g1), nrow = 1, ncol = 2)
+object %<>% RunPCA(npcs = 100, verbose = FALSE)
+jpeg(paste0(path,"ElbowPlot_RNA.jpeg"), units="in", width=10, height=7,res=600)
+print(ElbowPlot(object,ndims = 100))
 dev.off()
+object <- JackStraw(object, num.replicate = 20,dims = npcs)
+object <- ScoreJackStraw(object, dims = 1:npcs)
+
+for(i in 0:9){
+    a = i*10+1; b = (i+1)*10
+    jpeg(paste0(path,"JackStrawPlot_",a,"_",b,".jpeg"), units="in", width=10, height=7,res=600)
+    print(JackStrawPlot(object, dims = a:b))
+    dev.off()
+    Progress(i, 9)
+}
+p.values = object[["pca"]]@jackstraw@overall.p.values
+print(npcs <- max(which(p.values[,"Score"] <=0.05)))
+npcs = 93
+
+
+#======1.6 Performing SCTransform and integration =========================
+
+format(object.size(object),unit = "GB")
+options(future.globals.maxSize= object.size(object)*10)
+object %<>% SCTransform(method = "glmGamPoi", vars.to.regress = "percent.mt", verbose = TRUE)
+DefaultAssay(object) <- "SCT"
+object %<>% ScaleData(verbose = FALSE)
+object %<>% RunPCA(verbose = T,npcs = npcs)
+
+jpeg(paste0(path,"S1_ElbowPlot_SCT.jpeg"), units="in", width=10, height=7,res=600)
+ElbowPlot(object, ndims = npcs)
+dev.off()
+
+saveRDS(object, file = "data/Lorenzo-LS6_20210411.rds")
+#======1.8 UMAP from harmony =========================
+DefaultAssay(object) = "SCT"
+
+jpeg(paste0(path,"S1_RunHarmony.jpeg"), units="in", width=10, height=7,res=600)
+system.time(object %<>% RunHarmony.1(group.by = "orig.ident", dims.use = 1:npcs,
+                                     theta = 2, plot_convergence = TRUE,
+                                     nclust = 50, max.iter.cluster = 100))
+dev.off()
+
+object %<>% RunUMAP(reduction = "harmony", dims = 1:npcs)
+#system.time(object %<>% RunTSNE(reduction = "harmony", dims = 1:npcs))
+
+object[["harmony.umap"]] <- CreateDimReducObject(embeddings = object@reductions[["umap"]]@cell.embeddings,
+                                                 key = "harmonyUMAP_", assay = DefaultAssay(object))
+#object[["harmony.tsne"]] <- CreateDimReducObject(embeddings = object@reductions[["tsne"]]@cell.embeddings,
+#                                                 key = "harmonytSNE_", assay = DefaultAssay(object))
+
+#npcs = 100
+object %<>% RunUMAP(reduction = "pca", dims = 1:npcs)
+#system.time(object %<>% RunTSNE(reduction = "pca", dims = 1:npcs))
+object %<>% FindNeighbors(reduction = "umap",dims = 1:2)
+resolutions = c( 0.01, 0.1, 0.2, 0.5,0.8)
+for(i in 1:length(resolutions)){
+    object %<>% FindClusters(resolution = resolutions[i], algorithm = 1)
+    Progress(i,length(resolutions))
+}
+
+saveRDS(object, file = "data/Lorenzo-LS6_20210411.rds")

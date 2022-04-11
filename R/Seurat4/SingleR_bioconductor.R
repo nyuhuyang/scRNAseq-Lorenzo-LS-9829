@@ -8,7 +8,7 @@ library(magrittr)
 source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
 
 # ====== load single cell =============
-load(file = "data/Lorenzo-LS6_20210408_SCT.Rda")
+object = readRDS(file = "data/Lorenzo-LS6_20210411.rds")
 
 sce <- SingleCellExperiment(list(logcounts=object[["SCT"]]@data),
                                 colData=DataFrame(object@meta.data))
@@ -20,4 +20,4 @@ table(ref$label.fine)
 system.time(pred <- SingleR(test = sce, ref = ref, assay.type.test=1,
                                  labels = ref$label.fine))
 # elapsed 4872.846 sec
-saveRDS(object = pred, file = "output/20210408_Lorenzo-LS6_singleR_pred.rds")
+saveRDS(object = pred, file = "output/Lorenzo-LS6_20210411_singleR_pred.rds")

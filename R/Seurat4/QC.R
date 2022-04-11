@@ -1,12 +1,13 @@
 ########################################################################
 #
 #  0 setup environment, install libraries if necessary, load libraries
-# 
+#
 # ######################################################################
-invisible(lapply(c("Seurat","dplyr","ggplot2","scater"), function(x) {
-        suppressPackageStartupMessages(library(x,character.only = T))
-        }))
-source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
+invisible(lapply(c("Seurat","dplyr","ggplot2","scater","magrittr","pbapply",
+                   "cowplot"), function(x) {
+                           suppressPackageStartupMessages(library(x,character.only = T))
+                   }))
+source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat4_functions.R")
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path)) dir.create(path, recursive = T)
 if(!dir.exists("data")) dir.create("data")
@@ -18,62 +19,68 @@ if(!dir.exists("doc")) dir.create("doc")
 # ######################################################################
 #======1.1 Load the data files and Set up Seurat object =========================
 # read sample summary list
-df_samples <- readxl::read_excel("doc/20210408_scRNAseq_info.xlsx")
+df_samples <- readxl::read_excel("doc/20220408_scRNAseq_info.xlsx")
 df_samples = as.data.frame(df_samples)
 colnames(df_samples) <- colnames(df_samples) %>% tolower
-rm = "LS1"
-df_samples = df_samples[!(df_samples$sample %in% rm),]
-
-print(df_samples)
-(samples = df_samples$sample)
 nrow(df_samples)
 
 # check missing data
-current <- list.files("data/counts")
-(current <- current[!grepl(".Rda|RData",current)])
-(missing_data <- df_samples$sample.id[!(df_samples$sample.id %in% current)])
+read.path = "data/counts"
+current <- list.files(read.path)
+(missing_data <- df_samples$sample[!(df_samples$sample %in% current)])
 
 #======1.1.2 record data quality before removing low quanlity cells =========================
-# if args 2 is passed
 message("read metrics_summary")
-QC_list <- lapply(df_samples$sample.id, function(x){
-        tmp = read.csv(file = paste0("data/counts/",x,
-                               "/outs/metrics_summary.csv"))
+QC_list <- lapply(df_samples$sample, function(x){
+        tmp = read.csv(file = paste0(read.path,"/",x,
+                                     "/outs/metrics_summary.csv"))
         t(tmp)
 })
+names(QC_list) = df_samples$sample
 
-QC = bind_cols(QC_list) %>% as.data.frame()
-colnames(QC) = df_samples$sample.id
+cbind.fill <- function(...){
+        nm <- list(...)
+        nm <- lapply(nm, as.matrix)
+        n <- max(sapply(nm, nrow))
+        do.call(cbind, lapply(nm, function (x)
+                rbind(x, matrix(NA, n-nrow(x), ncol(x)))))
+}
+
+QC <- do.call(cbind.fill, QC_list)
+colnames(QC) = df_samples$sample
+QC[is.na(QC)] = ""
+
 rownames(QC) = rownames(QC_list[[1]])
-QC["Sequencing.Saturation",] %>% gsub("%","",.) %>% as.numeric %>% mean
 QC["Estimated.Number.of.Cells",] %>% gsub(",","",.) %>% as.numeric %>% sum
 
 write.csv(QC,paste0(path,"metrics_summary.csv"))
+df_samples %<>% cbind(t(QC))
+rownames(df_samples) = df_samples$sample
+openxlsx::write.xlsx(df_samples, file =  paste0(path,"20220411_En_6.xlsx"),
+                     colNames = TRUE,row.names = T,borders = "surrounding")
 
+
+
+
+## Load the GEX dataset
 message("Loading the datasets")
-## Load the dataset
-Seurat_raw <- list()
-Seurat_list <- list()
-for(i in seq_along(df_samples$sample)){
-        Seurat_raw[[i]] <- Read10X(data.dir = paste0("data/counts/",
-                                                     df_samples$sample.id[i],"/",
-                                                     df_samples$read.path[i]))
-        colnames(Seurat_raw[[i]]) = paste0(df_samples$sample[i],"-",colnames(Seurat_raw[[i]]))
-        colnames(Seurat_raw[[i]]) %<>% gsub("-[0-9+]","",.)
-        Seurat_list[[i]] <- CreateSeuratObject(Seurat_raw[[i]],
-                                               min.cells = 0,
-                                               names.delim = "-",
-                                               min.features = 0)
-        Progress(i, length(df_samples$sample))
-}
-remove(Seurat_raw);GC()
+Seurat_list <- pblapply(df_samples$sample, function(s){
+        tmp <- Read10X(data.dir = paste0(read.path,"/",as.character(s),"/outs/filtered_feature_bc_matrix"))
+        colnames(tmp) %<>% gsub("-[0-9+]","",.)
+        s = df_samples[df_samples$sample == s,"sample"]
+        colnames(tmp) = paste0(s,"-", colnames(tmp))
+        CreateSeuratObject(tmp,min.cells = 0,names.delim = "-",min.features = 0)
+})
+names(Seurat_list) = df_samples$sample
+
+
 #========1.1.3 g1 QC plots before filteration=================================
 object <- Reduce(function(x, y) merge(x, y, do.normalize = F), Seurat_list)
 remove(Seurat_list);GC()
 
 
 # read and select mitochondial genes
-if(unique(df_samples$organism) == "hg19") mito = "^MT-"
+if(unique(df_samples$organism) %in% c("hg19","hg38")) mito = "^MT-"
 if(unique(df_samples$organism) == "mm10") mito = "^mt-" # not Mt-
 if(unique(df_samples$organism) == "danRer10") mito = "^mt-"
 message("mito.genes:")
@@ -104,7 +111,7 @@ object@meta.data = meta_data
 table(object$orig.ident, object$discard)
 
 object %<>% subset(subset = discard == FALSE & 
-                           nFeature_RNA > 700 &
+                           nFeature_RNA > 500 &
                            nCount_RNA > 1000 & percent.mt < 10)
 # FilterCellsgenerate Vlnplot before and after filteration
 Idents(object) = "orig.ident"
@@ -119,10 +126,10 @@ save(g2,file= paste0(path,"g2","_",length(df_samples$sample),"_",gsub("-","",Sys
 
 jpeg(paste0(path,"S1_nGene.jpeg"), units="in", width=10, height=7,res=600)
 print(plot_grid(g1[[1]]+ggtitle("nFeature_RNA before filteration")+
-                        scale_y_log10(limits = c(100,10000))+
+                        scale_y_log10(limits = c(200,10000))+
                         theme(plot.title = element_text(hjust = 0.5)),
                 g2[[1]]+ggtitle("nFeature_RNA after filteration")+
-                        scale_y_log10(limits = c(100,10000))+
+                        scale_y_log10(limits = c(200,10000))+
                         theme(plot.title = element_text(hjust = 0.5))))
 dev.off()
 jpeg(paste0(path,"S1_nUMI.jpeg"), units="in", width=10, height=7,res=600)
@@ -144,4 +151,4 @@ dev.off()
 
 #====
 format(object.size(object),unit = "GB")
-save(object, file = "data/Lorenzo-LS6_20210408.Rda")
+saveRDS(object, file = "data/Lorenzo-LS6_20210411.rds")
