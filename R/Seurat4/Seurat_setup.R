@@ -20,13 +20,13 @@ if(!dir.exists(path)) dir.create(path, recursive = T)
 # ######################################################################
 #======1.1 Setup the Seurat objects =========================
 # read sample summary list
-df_samples <- readxl::read_excel("output/20220411/20220411_En_6.xlsx")
+df_samples <- readxl::read_excel("output/20220419/20220411_En_6.xlsx")
 df_samples = as.data.frame(df_samples)
 colnames(df_samples) <- colnames(df_samples) %>% tolower
 nrow(df_samples)
 
 #======1.2 load  Seurat =========================
-object  =readRDS(file = "data/Lorenzo-LS6_20210411.rds")
+object  =readRDS(file = "data/Lorenzo-LS6_20220411.rds")
 meta.data = object@meta.data
 table(df_samples$sample %in% meta.data$orig.ident)
 for(i in 1:length(df_samples$sample)){
@@ -84,7 +84,7 @@ jpeg(paste0(path,"S1_ElbowPlot_SCT.jpeg"), units="in", width=10, height=7,res=60
 ElbowPlot(object, ndims = npcs)
 dev.off()
 
-saveRDS(object, file = "data/Lorenzo-LS6_20210411.rds")
+saveRDS(object, file = "data/Lorenzo-LS6_20220411.rds")
 #======1.8 UMAP from harmony =========================
 DefaultAssay(object) = "SCT"
 
@@ -112,4 +112,4 @@ for(i in 1:length(resolutions)){
     Progress(i,length(resolutions))
 }
 
-saveRDS(object, file = "data/Lorenzo-LS6_20210411.rds")
+saveRDS(object, file = "data/Lorenzo-LS6_20220411.rds")
